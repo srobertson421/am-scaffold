@@ -1,106 +1,76 @@
-#!/usr/bin/env node
-var fs = require('fs');
-var program = require('commander');
-var exec = require('child_process').exec;
+var prompt = require('prompt');
 var spawn = require('child_process').spawn;
+var exec = require('child_process').exec;
 
-program.arguments('<projectName>')
-.action(function(projectName) {
-  console.log('Creating new project called %s', projectName);
+prompt.start();
 
-  createChildSpawn('meteor', ['create', projectName], '.', function() {
-    restructureProject(projectName);
-  });
-})
-.parse(process.argv);
+initProject()
 
-function createChildSpawn(command, argList, cwd, closeCallback) {
+function initProject() {
+  projectPrompts = {
+    properties: {
+      projectName: {
+        description: 'Enter the Project Name',
+        required: true
+      }
+    }
+  }
 
-  var cp = spawn(command, argList, {cwd: cwd});
+  prompt.get(projectPrompts, function (err, result) {
+    if (err) { return onErr(err); }
 
-  console.log('Running:', command, argList[0]);
+    var meteorCommand = spawn('meteor', ['create', result.projectName], {stdio: 'inherit'});
+    //meteorCommand.stdout.setEncoding('utf8')
 
-  cp.stdout.on('data', function(data) {
-    console.log(data.toString());
-  });
+    console.log('Building Meteor app ' + result.projectName + '...');
 
-  cp.stderr.on('data', function(data) {
-    console.log(data.toString());
-  });
-
-  cp.on('message', function(message) {
-    console.log(message.toString());
-  });
-
-  cp.on('close', function(code) {
-    console.log(command, 'closed on code', code.toString());
-    closeCallback(argList);
+    meteorCommand.on( 'close', function(code) {
+      console.log('Finished creating app structure');
+      removeMeteorDeps(result.projectName);
+    });
   });
 }
 
-// Need exec for wildcards in file manipulation
-function createChildExec(command, closeCallback) {
-  exec(command, function(err, stdout, stderr) {
-    console.log('Executed shell command:', command);
+function removeMeteorDeps(projectName) {
+  var removeCommand = spawn('meteor', ['remove', 'blaze-html-templates', 'ecmascript', 'insecure', 'autopublish'], {cwd: './' + projectName, stdio: 'inherit'})
+
+  console.log('Removing Meteor Deps...');
+
+  removeCommand.on('close', function(code) {
+    console.log('Removed meteor deps...');
+    addMeteorDeps(projectName);
   });
 }
 
-// Editing files and adding deps
-function restructureProject(projectName) {
-  console.log('Amending project files...');
-  var folderPath = './' + projectName;
-  var clientPath = folderPath + '/client';
-  var serverPath = folderPath + '/server';
-  var importsPath = folderPath + '/imports';
-  var importsUIPath = importsPath + '/ui';
-  var importsUIComponentsPath = importsUIPath + '/components';
-  var importsAPIPath = importsPath + '/api';
+function addMeteorDeps(projectName) {
+  var addCommand = spawn('meteor', ['add', 'pbastowski:angular-babel', 'urigo:static-templates', 'accounts-password'], {cwd: './' + projectName, stdio: 'inherit'});
 
-  createChildExec('rm -rf ' + clientPath + '/*');
-  createChildExec('rm -rf ' + serverPath + '/*');
-  createChildExec('mkdir ' + importsPath);
-  createChildExec('mkdir ' + importsUIPath);
-  createChildExec('mkdir ' + importsUIComponentsPath);
-  createChildExec('mkdir ' + importsAPIPath);
-  createChildExec('touch ' + clientPath + '/main.html ' + clientPath + '/main.js ' + clientPath + '/main.css');
+  console.log('Adding Meteor Deps...');
 
-  removeMeteorPackages(folderPath);
-}
-
-function removeMeteorPackages(projectPath) {
-  // Meteor packages remove
-  createChildSpawn('meteor', ['remove',
-      'blaze-html-templates',
-      'ecmascript',
-      'insecure',
-      'autopublish'
-    ], projectPath, function() {
-    console.log('removed blaze templates, ecmascript, insecure, and autopublish');
-    npmInstalls(projectPath);
+  addCommand.on('close', function(code) {
+    console.log('Added meteor deps...');
+    addNPMDeps(projectName);
   });
 }
 
-function npmInstalls(projectPath) {
-  // NPM installs 
-  createChildSpawn('meteor', ['npm', 'install', '--save',
-      'angular',
-      'angular-meteor',
-      'angular-ui-router',
-      'bootstrap@4.0.0-alpha.2'
-    ], projectPath, function() {
-    console.log('added npm modules: angular, angular-meteor');
-    meteorInstalls(projectPath);
+function addNPMDeps(projectName) {
+  var npmCommand = spawn('meteor', ['npm', 'install', '--save', 'angular', 'angular-meteor', 'angular-ui-router', 'bootstrap@4.0.0-alpha.2'], {cwd: './' + projectName, stdio: 'inherit'});
+
+  console.log('Adding NPM Deps...');
+
+  npmCommand.on('close', function(code) {
+    console.log('Added npm deps...');
+    removeClientFiles(projectName);
   });
 }
 
-function meteorInstalls(projectPath) {
-  // Meteor package installs
-  createChildSpawn('meteor', ['add',
-      'pbastowski:angular-babel',
-      'urigo:static-templates',
-      'accounts-password',
-      'dotansimha:accounts-ui-angular'
-    ], projectPath, function() {
-    console.log('added meteor package: angular-babel');
+function removeClientFiles(projectName) {
+  exec('rm -rf ./' + projectName + '/client/*', function() {
+    console.log('Removed Files');
   });
+}
+
+function onErr(err) {
+  console.log(err);
+  return 1;
 }
